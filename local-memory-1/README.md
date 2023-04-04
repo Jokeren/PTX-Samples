@@ -1,4 +1,4 @@
-# Steps to reproduce the IMA problem (potentially) caused by register spills
+# Steps to reproduce the IMA problem (potentially) caused by register spilling
 
 ## Package Installation
 
