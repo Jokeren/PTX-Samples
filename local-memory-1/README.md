@@ -6,7 +6,7 @@
 
 ```bash
 pip3 install --force-reinstall --pre torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/nightly/cu118
-pip3 uninstall pytorch-triton
+pip3 uninstall -y pytorch-triton
 ```
 
 ### Triton
