@@ -72,9 +72,6 @@ def matmul(a, b, activation=None):
     assert b.is_contiguous(), "matrix B must be contiguous"
     M, K = a.shape
     K, N = b.shape
-    assert (
-        K % 32 == 0
-    ), "We don't check memory-out-of-bounds with K so K must be divisible by BLOCK_SIZE_K"
     # allocates output
     c = torch.empty((M, N), device=a.device, dtype=a.dtype)
     # 1D launch kernel where each block gets its own program.
@@ -110,7 +107,7 @@ else:
     triton.testing.Benchmark(
         x_names=['M', 'N', 'K'],  # argument names to use as an x-axis for the plot
         x_vals=[
-            8192
+            8193
         ],  # different possible values for `x_name`
         line_arg='provider',  # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
