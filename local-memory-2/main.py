@@ -66,6 +66,7 @@ def matmul_kernel(
     stride_bk, stride_bn,
     stride_cm, stride_cn,
     # Meta-parameters
+    fixed: tl.constexpr,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
     GROUP_SIZE_M: tl.constexpr, TILE_M: tl.constexpr, TILE_N: tl.constexpr
 ):
@@ -80,25 +81,30 @@ def matmul_kernel(
     group_size = min(grid_m - group_id * GROUP_SIZE_M, GROUP_SIZE_M)
     pid_m = group_id * GROUP_SIZE_M + (pid % group_size)
     pid_n = (pid % width) // (group_size)
-    if (M - pid_m * BLOCK_SIZE_M < BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N < BLOCK_SIZE_N):
-        matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                    TILE_M=TILE_M, TILE_N=TILE_N)
-    elif (M - pid_m * BLOCK_SIZE_M < BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N >= BLOCK_SIZE_N):
-        matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                    TILE_M=TILE_M, TILE_N=BLOCK_SIZE_N)
-    elif (M - pid_m * BLOCK_SIZE_M >= BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N < BLOCK_SIZE_N):
-        matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-                    BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
-                    TILE_M=BLOCK_SIZE_M, TILE_N=TILE_N)
-    else:
+    if fixed:
         matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
                     BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
                     TILE_M=BLOCK_SIZE_M, TILE_N=BLOCK_SIZE_N)
+    else:
+        if (M - pid_m * BLOCK_SIZE_M < BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N < BLOCK_SIZE_N):
+            matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
+                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                        TILE_M=TILE_M, TILE_N=TILE_N)
+        elif (M - pid_m * BLOCK_SIZE_M < BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N >= BLOCK_SIZE_N):
+            matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
+                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                        TILE_M=TILE_M, TILE_N=BLOCK_SIZE_N)
+        elif (M - pid_m * BLOCK_SIZE_M >= BLOCK_SIZE_M) and (N - pid_n * BLOCK_SIZE_N < BLOCK_SIZE_N):
+            matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
+                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                        TILE_M=BLOCK_SIZE_M, TILE_N=TILE_N)
+        else:
+            matmul_core(pid_m, pid_n, pid_z, A, B, C, M, N, K, stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
+                        BLOCK_SIZE_M=BLOCK_SIZE_M, BLOCK_SIZE_N=BLOCK_SIZE_N, BLOCK_SIZE_K=BLOCK_SIZE_K,
+                        TILE_M=BLOCK_SIZE_M, TILE_N=BLOCK_SIZE_N)
 
 
-def matmul(a, b, activation=None):
+def matmul(a, b, fixed=False):
     # checks constraints
     assert a.shape[1] == b.shape[0], "incompatible dimensions"
     assert a.is_contiguous(), "matrix A must be contiguous"
@@ -117,53 +123,61 @@ def matmul(a, b, activation=None):
         M, N, K,
         a.stride(0), a.stride(1),
         b.stride(0), b.stride(1),
-        c.stride(0), c.stride(1)
+        c.stride(0), c.stride(1),
+        fixed=fixed
     )
     return c
 
 
+M = 2049
+K = 8192
+
 torch.manual_seed(0)
-a = torch.randn((8193, 8192), device='cuda', dtype=torch.float16)
-b = torch.randn((8192, 8193), device='cuda', dtype=torch.float16)
-triton_output = matmul(a, b, activation=None)
+a = torch.randn((M, K), device='cuda', dtype=torch.float16)
+b = torch.randn((K, K), device='cuda', dtype=torch.float16)
+triton_output = matmul(a, b)
 torch_output = torch.matmul(a, b)
 print(f"triton_output={triton_output}")
 print(f"torch_output={torch_output}")
 if torch.allclose(triton_output, torch_output, atol=1e-2, rtol=0):
     print("✅ Triton and Torch match")
 else:
+    print('max abs', torch.max(torch.abs(triton_output - torch_output)))
     print("❌ Triton and Torch differ")
 
 
 @triton.testing.perf_report(
     triton.testing.Benchmark(
-        x_names=['M', 'N', 'K'],  # argument names to use as an x-axis for the plot
+        x_names=['M'],  # argument names to use as an x-axis for the plot
         x_vals=[
-            8193
+            M
         ],  # different possible values for `x_name`
         line_arg='provider',  # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
-        line_vals=['cublas', 'triton'],
+        line_vals=['cublas', 'triton', 'irregular'],
         # label name for the lines
-        line_names=["cuBLAS", "Triton"],
+        line_names=["cuBLAS", "Triton", 'Irregular'],
         # line styles
-        styles=[('green', '-'), ('green', '--'), ('blue', '-'), ('blue', '--')],
+        styles=[('green', '-'), ('green', '--'), ('blue', '-')],
         ylabel="TFLOPS",  # label name for the y-axis
         # name for the plot. Used also as a file name for saving the plot.
         plot_name="matmul-performance",
         args={},
     )
 )
-def benchmark(M, N, K, provider):
-    a = torch.randn((M, 8192), device='cuda', dtype=torch.float16)
-    b = torch.randn((8192, N), device='cuda', dtype=torch.float16)
+def benchmark(M, provider):
+    a = torch.randn((M, K), device='cuda', dtype=torch.float16)
+    b = torch.randn((K, K), device='cuda', dtype=torch.float16)
     if provider == 'cublas':
         ms, min_ms, max_ms = triton.testing.do_bench(
             lambda: torch.matmul(a, b), rep=100)
     if provider == 'triton':
+        ms, min_ms, max_ms = triton.testing.do_bench(
+            lambda: matmul(a, b, fixed=True), rep=100)
+    if provider == 'irregular':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(a, b), rep=100)
 
-    def perf(ms): return 2 * M * N * K * 1e-12 / (ms * 1e-3)
+    def perf(ms): return 2 * M * K * K * 1e-12 / (ms * 1e-3)
     return perf(ms), perf(max_ms), perf(min_ms)
 
 
