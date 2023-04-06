@@ -48,8 +48,24 @@ def matmul_core(
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64,
-                      'GROUP_SIZE_M': 8, 'TILE_M': 16, 'TILE_N': 16}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256,
+                      'BLOCK_SIZE_K': 32}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128,
+                      'BLOCK_SIZE_K': 32}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 64,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32,
+                      'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32,
+                      'BLOCK_SIZE_K': 32}, num_stages=5, num_warps=2),
     ],
     key=['M', 'N', 'K'],
 )
@@ -124,13 +140,16 @@ def matmul(a, b, fixed=False):
         a.stride(0), a.stride(1),
         b.stride(0), b.stride(1),
         c.stride(0), c.stride(1),
-        fixed=fixed
+        fixed=fixed,
+        GROUP_SIZE_M=8,
+        TILE_M=16,
+        TILE_N=16,
     )
     return c
 
 
-M = 2049
-K = 8192
+M = 257
+K = 4096
 
 torch.manual_seed(0)
 a = torch.randn((M, K), device='cuda', dtype=torch.float16)
