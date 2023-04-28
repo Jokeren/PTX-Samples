@@ -4,7 +4,7 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
+@triton.jit(noinline=True)
 def matmul_core(
     pid_m, pid_n, pid_z,
     # Pointers to matrices
