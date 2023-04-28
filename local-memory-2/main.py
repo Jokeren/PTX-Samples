@@ -172,16 +172,15 @@ def benchmark(M, provider):
     a = torch.randn((M, K), device='cuda', dtype=torch.float16)
     b = torch.randn((K, K), device='cuda', dtype=torch.float16)
     if provider == 'cublas':
-        ms, min_ms, max_ms = triton.testing.do_bench(
-            lambda: torch.matmul(a, b), rep=100)
+        ms = triton.testing.do_bench(lambda: torch.matmul(a, b), rep=100)
     if provider == 'triton':
-        ms, min_ms, max_ms = triton.testing.do_bench(
+        ms = triton.testing.do_bench(
             lambda: matmul(a, b, fixed=True), rep=100)
     if provider == 'irregular':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(a, b), rep=100)
+        ms = triton.testing.do_bench(lambda: matmul(a, b), rep=100)
 
     def perf(ms): return 2 * M * K * K * 1e-12 / (ms * 1e-3)
-    return perf(ms), perf(max_ms), perf(min_ms)
+    return perf(ms)
 
 
 benchmark.run(show_plots=True, print_data=True)
