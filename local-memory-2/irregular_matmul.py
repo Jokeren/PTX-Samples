@@ -2,7 +2,7 @@ import triton
 import triton.language as tl
 
 
-@triton.jit(noinline=False)
+@triton.jit(noinline=True)
 def matmul_core(
     pid_m, pid_n,
     # Pointers to matrices
@@ -63,25 +63,6 @@ def matmul_core(
                        'BLOCK_SIZE_K': 32}, num_stages=4, num_warps=4),
         triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32,
                        'BLOCK_SIZE_K': 32}, num_stages=5, num_warps=2),
-        # good for int8
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256,
-                       'BLOCK_SIZE_K': 128}, num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 128,
-                       'BLOCK_SIZE_K': 128}, num_stages=3, num_warps=8),
-        triton.Config({'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 64,
-                       'BLOCK_SIZE_K': 128}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 256,
-                       'BLOCK_SIZE_K': 128}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128,
-                       'BLOCK_SIZE_K': 128}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64,
-                       'BLOCK_SIZE_K': 64}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128,
-                       'BLOCK_SIZE_K': 64}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32,
-                       'BLOCK_SIZE_K': 64}, num_stages=4, num_warps=4),
-        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 32,
-                       'BLOCK_SIZE_K': 64}, num_stages=5, num_warps=2),
     ],
     key=['Z', 'M', 'N', 'K'],
 )
@@ -98,19 +79,15 @@ def batch_matmul_kernel(
     stride_bz, stride_bk, stride_bn,
     stride_cz, stride_cm, stride_cn,
     BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
-    GROUP_SIZE_M: tl.constexpr, TILE_SIZE_M: tl.constexpr, TILE_SIZE_N: tl.constexpr,
+    TILE_SIZE_M: tl.constexpr, TILE_SIZE_N: tl.constexpr,
 ):
     # matrix multiplication
     pid_z = tl.program_id(0)
     pid = tl.program_id(1)
     grid_m = tl.cdiv(M, BLOCK_SIZE_M)
     grid_n = tl.cdiv(N, BLOCK_SIZE_N)
-    # re-order program ID for better L2 performance
-    width = GROUP_SIZE_M * grid_n
-    group_id = pid // width
-    group_size = min(grid_m - group_id * GROUP_SIZE_M, GROUP_SIZE_M)
-    pid_m = group_id * GROUP_SIZE_M + (pid % group_size)
-    pid_n = (pid % width) // (group_size)
+    pid_m = pid // grid_n
+    pid_n = pid % grid_n
     A = A + pid_z * stride_az
     B = B + pid_z * stride_bz
     C = C + pid_z * stride_cz

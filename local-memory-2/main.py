@@ -35,7 +35,7 @@ def matmul(a, b, fixed=True):
             a.stride(0), a.stride(1), a.stride(2),
             b.stride(0), b.stride(1), b.stride(2),
             c.stride(0), c.stride(1), c.stride(2),
-            GROUP_SIZE_M=4, TILE_SIZE_M=16, TILE_SIZE_N=16
+            TILE_SIZE_M=16, TILE_SIZE_N=16
         )
 
     return c
@@ -61,9 +61,9 @@ else:
 
 @triton.testing.perf_report(
     triton.testing.Benchmark(
-        x_names=['M'],  # argument names to use as an x-axis for the plot
+        x_names=['K'],  # argument names to use as an x-axis for the plot
         x_vals=[
-            M
+            512, 1024, 2048, 4096
         ],  # different possible values for `x_name`
         line_arg='provider',  # argument name whose value corresponds to a different line in the plot
         # possible values for `line_arg``
@@ -78,7 +78,7 @@ else:
         args={},
     )
 )
-def benchmark(M, provider):
+def benchmark(K, provider):
     a = torch.randn((Z, M, K), device='cuda', dtype=torch.float16)
     b = torch.randn((Z, K, K), device='cuda', dtype=torch.float16)
     if provider == 'cublas':
